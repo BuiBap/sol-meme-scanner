@@ -1,0 +1,59 @@
+name: sol-meme-scanner
+
+on:
+  schedule:
+    - cron: '2-59/5 * * * *'   # lệch 2 phút so với bot Base -> tránh 2 job cùng commit
+  workflow_dispatch:
+
+concurrency:
+  group: scanner-sol
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run scan (1 lần)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUGCHECK_API_KEY: ${{ secrets.RUGCHECK_API_KEY }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+          TWEETSCOUT_API_KEY: ${{ secrets.TWEETSCOUT_API_KEY }}
+          SMART_MONEY_API_KEY: ${{ secrets.SMART_MONEY_API_KEY }}
+          MAX_ALERTS_PER_RUN: '8'
+        run: python sol_meme_bot.py
+
+      - name: Commit state (seen + csv)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          FILES_TO_ADD=""
+          [ -f sol_seen.json ] && FILES_TO_ADD="$FILES_TO_ADD sol_seen.json"
+          [ -f sol_signals.csv ] && FILES_TO_ADD="$FILES_TO_ADD sol_signals.csv"
+
+          if [ -n "$FILES_TO_ADD" ] && [ -n "$(git status --porcelain $FILES_TO_ADD)" ]; then
+            git add $FILES_TO_ADD
+            git commit -m "state: cập nhật sol seen/signals [skip ci]"
+            git pull --rebase --autostash origin ${{ github.ref_name }} || true
+            git push
+          else
+            echo "Không có thay đổi state để commit."
+          fi
