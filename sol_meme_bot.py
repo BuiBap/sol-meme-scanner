@@ -113,7 +113,7 @@ class Config:
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     telegram_send_summary: bool = True     # CHỈ gửi khi CÓ tín hiệu (0 hit -> im lặng)
-     heartbeat_file: str = "sol_heartbeat.json"
+    heartbeat_file: str = "sol_heartbeat.json"
     heartbeat_interval_hours: float = 24.0   # "không có tín hiệu" chỉ báo 1 lần/khoảng này
 
 # Địa chỉ đốt trên Solana + các tag coi như đã khóa/đốt
@@ -469,7 +469,7 @@ def ko_stage1(c: Candidate, cfg: Config) -> Optional[str]:
     if not (cfg.min_age_hours <= c.age_hours <= cfg.max_age_hours):
         return f"tuổi {c.age_hours:.1f}h ngoài khoảng"
     if c.txns_24h < cfg.min_txns_24h:
-        return f"txns24h {c.txns_24h} < {cfg.min_txns_24h}"
+        return f"txns24h {c.txns_24h} < {cfg.min_txns_24h}"Page_DownPage_DownPage_Down
     if c.market_cap > 0:
         need = cfg.lp_mc_min_over_1m if c.market_cap >= cfg.mc_threshold else cfg.lp_mc_min_under_1m
         if c.lp_mc_ratio < need:
