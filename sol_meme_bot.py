@@ -586,7 +586,7 @@ def ko_stage2_goplus_sol(c: Candidate, cfg: Config, gp: GoPlusSolana) -> Optiona
     if cfg.enforce_fresh_wallet_ko:
         fw = hook_fresh_wallet_ratio(c.token_address, cfg)
         c.fresh_wallet_pct = fw
-       if fw is not None and fw > cfg.max_fresh_wallet_pct:
+        if fw is not None and fw > cfg.max_fresh_wallet_pct:
             return f"fresh wallets {fw:.0f}% > {cfg.max_fresh_wallet_pct}%"
 
     # --- 7. K.O bổ sung từ Jupiter (organic score, wash trading, top holders) ---
