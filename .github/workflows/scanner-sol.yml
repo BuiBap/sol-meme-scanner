@@ -48,7 +48,7 @@ jobs:
           FILES_TO_ADD=""
           [ -f sol_seen.json ] && FILES_TO_ADD="$FILES_TO_ADD sol_seen.json"
           [ -f sol_signals.csv ] && FILES_TO_ADD="$FILES_TO_ADD sol_signals.csv"
-
+          [ -f sol_heartbeat.json ] && FILES_TO_ADD="$FILES_TO_ADD sol_heartbeat.json"
           if [ -n "$FILES_TO_ADD" ] && [ -n "$(git status --porcelain $FILES_TO_ADD)" ]; then
             git add $FILES_TO_ADD
             git commit -m "state: cập nhật sol seen/signals [skip ci]"
