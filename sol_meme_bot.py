@@ -38,11 +38,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import requests
+
 # --- nguồn miễn phí bổ sung (module free_sources_sol.py) ---
 try:
     import free_sources_sol as fsol
 except ImportError:
     fsol = None
+
 # =========================================================================== #
 #  CẤU HÌNH — chỉnh ngưỡng ở đây
 # =========================================================================== #
@@ -113,8 +115,10 @@ class Config:
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     telegram_send_summary: bool = True     # CHỈ gửi khi CÓ tín hiệu (0 hit -> im lặng)
+    max_alerts_per_run: int = int(os.getenv("MAX_ALERTS_PER_RUN", "8"))
     heartbeat_file: str = "sol_heartbeat.json"
     heartbeat_interval_hours: float = 24.0   # "không có tín hiệu" chỉ báo 1 lần/khoảng này
+
 
 # Địa chỉ đốt trên Solana + các tag coi như đã khóa/đốt
 SOL_INCINERATOR = "1nc1nerator11111111111111111111111111111111"
@@ -852,27 +856,20 @@ class Scanner:
             self.seen.add(c.token_address)
         self._save_seen()
 
-        # Luôn gửi dòng tổng kết (kể cả 0 hit) để anh biết bot còn sống
-        if self.cfg.telegram_send_summary and self.tg.enabled:
+        # CHỈ gửi tổng kết khi CÓ tín hiệu; 0 hit -> im lặng hoàn toàn
+        if self.cfg.telegram_send_summary and self.tg.enabled and to_send:
             hm = datetime.now(timezone.utc).strftime("%H:%M UTC")
-            if to_send:
-                top = to_send[0]
-                extra = f" (+{held} chờ lượt sau)" if held else ""
-                self.tg.send(f"🟢 <b>{len(to_send)}</b> tín hiệu SOL mới lúc {hm}{extra} "
-                             f"· cao nhất ${_esc(top.symbol)} ({top.score})")
-            else:
-                elapsed_h = (time.time() - self.last_heartbeat) / 3600.0
-                if elapsed_h >= self.cfg.heartbeat_interval_hours:
-                    self.tg.send(f"⚪ Không có tín hiệu ở SOL đạt ngưỡng lúc {hm}")
-                    self.last_heartbeat = time.time()
-                    self._save_heartbeat()
+            top = to_send[0]
+            extra = f" (+{held} chờ lượt sau)" if held else ""
+            self.tg.send(f"🟢 <b>{len(to_send)}</b> tín hiệu SOL mới lúc {hm}{extra} "
+                         f"· cao nhất ${_esc(top.symbol)} ({top.score})")
         return to_send
 
     def _print(self, c: Candidate):
         print(f"\n  ⭐ [{c.score}] {c.symbol} — {c.name}")
         print(f"     MC ${c.market_cap:,.0f} | Liq ${c.liquidity_usd:,.0f} "
               f"(LP/MC {c.lp_mc_ratio*100:.1f}%) | Vol24h ${c.volume_24h:,.0f} | tuổi {c.age_hours:.0f}h")
-         print(f"     mint_revoked={c.mint_revoked} freeze_revoked={c.freeze_revoked} "
+        print(f"     mint_revoked={c.mint_revoked} freeze_revoked={c.freeze_revoked} "
               f"| LP burn/lock {c.lp_burned_locked_pct}% | fee {c.transfer_fee_pct}%")
         print(f"     Txs/Maker {c.txs_maker_ratio:.1f} | top10 {c.top10_holder_pct}% "
               f"| slip$1k≈{c.slippage_est_pct:.1f}% | rugcheck {c.rugcheck_score}")
