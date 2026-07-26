@@ -113,8 +113,8 @@ class Config:
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     telegram_send_summary: bool = True     # CHỈ gửi khi CÓ tín hiệu (0 hit -> im lặng)
-    max_alerts_per_run: int = int(os.getenv("MAX_ALERTS_PER_RUN", "8"))
-
+   heartbeat_file: str = "sol_heartbeat.json"
+    heartbeat_interval_hours: float = 24.0   # "không có tín hiệu" chỉ báo 1 lần/khoảng này
 
 # Địa chỉ đốt trên Solana + các tag coi như đã khóa/đốt
 SOL_INCINERATOR = "1nc1nerator11111111111111111111111111111111"
@@ -763,6 +763,21 @@ class Scanner:
         self.rug = RugCheck(self.http, cfg)
         self.tg = TelegramNotifier(cfg)
         self.seen = self._load_seen()
+        self.last_heartbeat = self._load_heartbeat()
+
+    def _load_heartbeat(self) -> float:
+        if os.path.exists(self.cfg.heartbeat_file):
+            try:
+                return float(json.load(open(self.cfg.heartbeat_file)).get("last_heartbeat", 0))
+            except Exception:
+                return 0.0
+        return 0.0
+
+    def _save_heartbeat(self):
+        try:
+            json.dump({"last_heartbeat": self.last_heartbeat}, open(self.cfg.heartbeat_file, "w"))
+        except Exception:
+            pass
 
     def _load_seen(self) -> set:
         if os.path.exists(self.cfg.seen_file):
@@ -846,7 +861,12 @@ class Scanner:
                 self.tg.send(f"🟢 <b>{len(to_send)}</b> tín hiệu SOL mới lúc {hm}{extra} "
                              f"· cao nhất ${_esc(top.symbol)} ({top.score})")
             else:
-                self.tg.send(f"⚪ Không có tín hiệu ở SOL đạt ngưỡng lúc {hm}")
+                else:
+                elapsed_h = (time.time() - self.last_heartbeat) / 3600.0
+                if elapsed_h >= self.cfg.heartbeat_interval_hours:
+                    self.tg.send(f"⚪ Không có tín hiệu ở SOL đạt ngưỡng lúc {hm}")
+                    self.last_heartbeat = time.time()
+                    self._save_heartbeat()
         return to_send
 
     def _print(self, c: Candidate):
