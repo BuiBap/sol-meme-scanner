@@ -38,7 +38,11 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import requests
-
+# --- nguồn miễn phí bổ sung (module free_sources_sol.py) ---
+try:
+    import free_sources_sol as fsol
+except ImportError:
+    fsol = None
 # =========================================================================== #
 #  CẤU HÌNH — chỉnh ngưỡng ở đây
 # =========================================================================== #
@@ -362,6 +366,7 @@ class Candidate:
     fresh_wallet_pct: Optional[float] = None
     smart_money_signal: Optional[dict] = None
     social_score: Optional[float] = None
+    jupiter: Optional[dict] = None
     # --- kết quả ---
     score: float = 0.0
     reasons: list = field(default_factory=list)
@@ -581,8 +586,17 @@ def ko_stage2_goplus_sol(c: Candidate, cfg: Config, gp: GoPlusSolana) -> Optiona
     if cfg.enforce_fresh_wallet_ko:
         fw = hook_fresh_wallet_ratio(c.token_address, cfg)
         c.fresh_wallet_pct = fw
-        if fw is not None and fw > cfg.max_fresh_wallet_pct:
+       if fw is not None and fw > cfg.max_fresh_wallet_pct:
             return f"fresh wallets {fw:.0f}% > {cfg.max_fresh_wallet_pct}%"
+
+    # --- 7. K.O bổ sung từ Jupiter (organic score, wash trading, top holders) ---
+    if fsol is not None:
+        jup = fsol.jupiter_signals(c.token_address)
+        if jup:
+            c.jupiter = jup
+            ko_jup = fsol.jupiter_ko(jup)
+            if ko_jup:
+                return ko_jup
     return None
 
 
@@ -638,27 +652,20 @@ def compute_net_buy_volume(c: Candidate, cfg: Config, gt: GeckoTerminal):
 # =========================================================================== #
 
 def hook_fresh_wallet_ratio(mint: str, cfg: Config) -> Optional[float]:
-    """% supply nằm ở ví tạo <24h. Trên Solana cần Helius (getTokenAccounts +
-    lịch sử ví) — rất nặng call và trả phí. Trả None = bỏ qua."""
-    if not cfg.helius_api_key:
+    if fsol is None:
         return None
-    # TODO: Helius DAS getTokenAccounts -> với mỗi owner lấy signature sớm nhất.
-    return None
+    return fsol.fresh_wallet_ratio(mint)
 
 def hook_smart_money(mint: str, cfg: Config) -> Optional[dict]:
-    """Smart-money chất lượng cao (WinRate>60%, PnL30d>$50k, >=3 ví độc lập gom trong 30').
-    GMGN không có API public; Nansen/Cielo/Arkham cần key trả phí."""
+    # Khong co nguon mien phi. Re nhat Cielo Whale $199/thang.
     if not cfg.smart_money_api_key:
         return None
-    # TODO: trả {"wallets": n, "usd_bought": x, "avg_winrate": y}
     return None
 
 def hook_social_score(mint: str, symbol: str, cfg: Config) -> Optional[float]:
-    """TweetScout X-Score / Kaito Mindshare / KOL bluecheck %. Cần key trả phí."""
-    if not cfg.tweetscout_api_key:
+    if fsol is None:
         return None
-    # TODO: trả điểm chuẩn hoá 0-100
-    return None
+    return fsol.social_presence_score(mint, symbol)
 
 
 # =========================================================================== #
