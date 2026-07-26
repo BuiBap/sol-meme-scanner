@@ -860,8 +860,7 @@ class Scanner:
                 extra = f" (+{held} chờ lượt sau)" if held else ""
                 self.tg.send(f"🟢 <b>{len(to_send)}</b> tín hiệu SOL mới lúc {hm}{extra} "
                              f"· cao nhất ${_esc(top.symbol)} ({top.score})")
-            else:
-                else:
+           else:
                 elapsed_h = (time.time() - self.last_heartbeat) / 3600.0
                 if elapsed_h >= self.cfg.heartbeat_interval_hours:
                     self.tg.send(f"⚪ Không có tín hiệu ở SOL đạt ngưỡng lúc {hm}")
