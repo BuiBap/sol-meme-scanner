@@ -872,7 +872,7 @@ class Scanner:
         print(f"\n  ⭐ [{c.score}] {c.symbol} — {c.name}")
         print(f"     MC ${c.market_cap:,.0f} | Liq ${c.liquidity_usd:,.0f} "
               f"(LP/MC {c.lp_mc_ratio*100:.1f}%) | Vol24h ${c.volume_24h:,.0f} | tuổi {c.age_hours:.0f}h")
-        print(f"     mint_revoked={c.mint_revoked} freeze_revoked={c.freeze_revoked} "
+         print(f"     mint_revoked={c.mint_revoked} freeze_revoked={c.freeze_revoked} "
               f"| LP burn/lock {c.lp_burned_locked_pct}% | fee {c.transfer_fee_pct}%")
         print(f"     Txs/Maker {c.txs_maker_ratio:.1f} | top10 {c.top10_holder_pct}% "
               f"| slip$1k≈{c.slippage_est_pct:.1f}% | rugcheck {c.rugcheck_score}")
