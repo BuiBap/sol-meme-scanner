@@ -113,7 +113,7 @@ class Config:
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     telegram_send_summary: bool = True     # CHỈ gửi khi CÓ tín hiệu (0 hit -> im lặng)
-   heartbeat_file: str = "sol_heartbeat.json"
+    heartbeat_file: str = "sol_heartbeat.json"
     heartbeat_interval_hours: float = 24.0   # "không có tín hiệu" chỉ báo 1 lần/khoảng này
 
 # Địa chỉ đốt trên Solana + các tag coi như đã khóa/đốt
