@@ -856,13 +856,20 @@ class Scanner:
             self.seen.add(c.token_address)
         self._save_seen()
 
-        # CHỈ gửi tổng kết khi CÓ tín hiệu; 0 hit -> im lặng hoàn toàn
-        if self.cfg.telegram_send_summary and self.tg.enabled and to_send:
+        # Có tín hiệu -> báo NGAY. Không có tín hiệu -> chỉ báo 1 lần/24h (heartbeat).
+        if self.cfg.telegram_send_summary and self.tg.enabled:
             hm = datetime.now(timezone.utc).strftime("%H:%M UTC")
-            top = to_send[0]
-            extra = f" (+{held} chờ lượt sau)" if held else ""
-            self.tg.send(f"🟢 <b>{len(to_send)}</b> tín hiệu SOL mới lúc {hm}{extra} "
-                         f"· cao nhất ${_esc(top.symbol)} ({top.score})")
+            if to_send:
+                top = to_send[0]
+                extra = f" (+{held} chờ lượt sau)" if held else ""
+                self.tg.send(f"🟢 <b>{len(to_send)}</b> tín hiệu SOL mới lúc {hm}{extra} "
+                             f"· cao nhất ${_esc(top.symbol)} ({top.score})")
+            else:
+                elapsed_h = (time.time() - self.last_heartbeat) / 3600.0
+                if elapsed_h >= self.cfg.heartbeat_interval_hours:
+                    self.tg.send(f"⚪ Không có tín hiệu ở SOL đạt ngưỡng lúc {hm}")
+                    self.last_heartbeat = time.time()
+                    self._save_heartbeat()
         return to_send
 
     def _print(self, c: Candidate):
