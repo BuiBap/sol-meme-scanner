@@ -3,35 +3,65 @@
 """
 free_sources_sol.py — Nguồn dữ liệu MIỄN PHÍ bổ sung cho sol_meme_bot.py (Solana).
 
-NGUỒN CHÍNH: Jupiter Token API V2 — mạnh hơn hẳn mọi thứ có trên Base.
-Nó trả sẵn những chỉ báo mà bot đang phải tự chế bằng proxy:
+=============================================================================
+ BẢN VÁ v2 (11/08/2026) — SỬA LỖI LÀM BOT IM LẶNG TỪ 26/07/2026
+=============================================================================
+Tín hiệu cuối cùng: 25/07 19:20 UTC. File này được thêm vào 26/07 15:14 UTC.
+Sau đó 0 tín hiệu trong 17 ngày. Nguyên nhân nằm ở jupiter_ko() bản cũ:
 
-  organicScore (0-100)     : điểm chất lượng ĐÃ LỌC BOT của Jupiter
-  buyOrganicVolume         : volume mua THẬT (đã trừ wash trading) <- quan trọng nhất
-  numOrganicBuyers         : số người mua thật, không phải bot
-  holderCount              : số holder thật
-  audit.topHoldersPercentage : % top holder (LẤP chỗ GoPlus Solana chỉ cho top-10)
-  audit.mintAuthorityDisabled / freezeAuthorityDisabled : đối chiếu chéo với GoPlus
-  audit.devMints           : dev đã mint bao nhiêu lần (mint nhiều lần = cờ đỏ)
-  isVerified, tags, cexes  : token đã được xác minh / niêm yết CEX chưa
-  dev                      : địa chỉ ví dev
-  twitter, website         : social có sẵn, khỏi gọi API khác
+ [1] min_organic_buy_pct = 40  -> LOẠI 100% TOKEN, kể cả SOL và USDC.
+     Đo kiểm 11/08/2026 trên chính bảng top-organic-score của Jupiter
+     (buyOrganicVolume / buyVolume, cửa sổ 1h):
+         SOL   0.77%   |  USDC  3.7%
+         CASH  10.2%   |  TOAD  13.8%  (organicScore 93 — token tốt nhất bảng)
+     Jupiter tính mọi lệnh đi qua aggregator/router là INORGANIC, nên tỷ lệ này
+     gần như không bao giờ vượt 15%. Ngưỡng mới: 5% (chỉ để bắt wash 100% bot).
 
-SỰ THẬT VỀ TỪNG NGUỒN (kiểm chứng 7/2026, không bịa):
-  - Jupiter lite-api.jup.ag : MIỄN PHÍ, KHÔNG cần key. Bản api.jup.ag cần x-api-key.
-    CẢNH BÁO: Jupiter đã đổi nền tảng billing, người dùng portal cũ được giữ
-    rate limit miễn phí ĐẾN 30/06/2026 (đã qua). Nếu lite-api bắt đầu chặn,
+ [2] max_dev_mints = 1 -> hiểu sai field. audit.devMints KHÔNG phải "dev in thêm
+     supply mấy lần". Đo kiểm: SOL=1, USDC=1, nhưng CASH=11, TOAD=10 (dù
+     mintAuthorityDisabled=true). Đây là số token ví dev đã từng phát hành.
+     Ví dev pump.fun thường 10+. -> TẮT hẳn, thay bằng devBalancePercentage
+     (dev còn ôm bao nhiêu % supply) — cái này mới thực sự là cờ đỏ.
+
+ [3] max_top_holders_pct = 25 -> quá chặt. USDC 25.7%, USDT 34.7%, TOAD 28.0%.
+     Trên Solana account LP/CEX/program cũng bị tính là holder. -> 45%.
+
+ [4] min_organic_score = 30 -> pool 1-120h tuổi (đúng khoảng bot săn) thường
+     Jupiter chưa kịp chấm và trả 0 -> "0 <= 0 < 30" -> K.O oan.
+     -> hạ xuống 10 VÀ bỏ qua khi organicScore == 0 (chưa có dữ liệu).
+
+THÊM MỚI:
+  - jupiter_score_bonus()      : dữ liệu Jupiter giờ CỘNG ĐIỂM, không chỉ để loại.
+  - jupiter_top_holders_pct()  : bù cho GoPlus khi mảng holders trả rỗng
+                                 (đây là lý do top10_holder_pct = 0.0% trong CSV).
+  - Mọi ngưỡng đọc được từ biến môi trường -> tinh chỉnh qua GitHub Secrets,
+    không cần sửa code.
+=============================================================================
+
+NGUỒN CHÍNH: Jupiter Token API V2.
+  organicScore (0-100)       : điểm chất lượng ĐÃ LỌC BOT của Jupiter
+  buyOrganicVolume           : volume mua thật (đã trừ wash trading)
+  numOrganicBuyers           : số người mua thật
+  holderCount                : số holder thật
+  audit.topHoldersPercentage : % top holder
+  audit.devBalancePercentage : % supply ví dev còn giữ
+  audit.mintAuthorityDisabled / freezeAuthorityDisabled : đối chiếu chéo GoPlus
+  isVerified, tags, cexes, dev, twitter, website
+
+SỰ THẬT VỀ TỪNG NGUỒN (kiểm chứng 11/08/2026):
+  - Jupiter lite-api.jup.ag : MIỄN PHÍ, KHÔNG cần key, vẫn hoạt động tốt.
+    Bản api.jup.ag cần x-api-key. Nếu lite-api bắt đầu chặn (log hiện cảnh báo),
     lấy key tại portal.jup.ag và set JUPITER_API_KEY.
-  - Helius : MIỄN PHÍ 1M credit/tháng, 10 RPS. CẦN key (helius.dev, free tier).
+  - Helius : MIỄN PHÍ 1M credit/tháng, 10 RPS. CẦN key (helius.dev).
     Chỉ dùng cho fresh-wallet ratio. Không có key -> bot tự bỏ qua.
   - GeckoTerminal /tokens/{addr}/info : MIỄN PHÍ, không key. Cho gt_score.
   - RugCheck : đã tích hợp sẵn trong sol_meme_bot.py, miễn phí.
 
-KHÔNG dùng được (đã kiểm chứng, đừng mất công):
-  - Kaito Yaps : ĐÃ KHAI TỬ 15/01/2026, trang docs trả 404.
+KHÔNG dùng được (đừng mất công):
+  - Kaito Yaps : ĐÃ KHAI TỬ 15/01/2026.
   - Smart money chất lượng cao : không có nguồn free. Rẻ nhất Cielo Whale $199/thg.
 
-CÁCH DÙNG: xem hướng dẫn cuối file.
+CÁCH VÁ VÀO sol_meme_bot.py: xem hướng dẫn cuối file.
 """
 
 import os
@@ -54,9 +84,26 @@ FRESH_WALLET_MAX_AGE_H = 24.0
 FRESH_WALLET_TOP_N = 15
 FRESH_WALLET_MIN_CHECKED = 5
 
+
+def _env_f(name: str, default: float) -> float:
+    """Đọc ngưỡng từ biến môi trường, sai kiểu thì dùng mặc định."""
+    try:
+        return float(os.getenv(name, ""))
+    except (TypeError, ValueError):
+        return default
+
+
+# ---- NGƯỠNG K.O JUPITER (đã hiệu chỉnh bằng số đo thật 11/08/2026) ---------- #
+# Muốn tinh chỉnh: thêm Secret/env cùng tên, KHÔNG cần sửa code.
+JUP_MIN_ORGANIC_SCORE   = _env_f("JUP_MIN_ORGANIC_SCORE",   10.0)   # cũ: 30
+JUP_MIN_ORGANIC_BUY_PCT = _env_f("JUP_MIN_ORGANIC_BUY_PCT",  1.0)   # cũ: 40 (chí mạng)
+JUP_MAX_TOP_HOLDERS_PCT = _env_f("JUP_MAX_TOP_HOLDERS_PCT", 45.0)   # cũ: 25
+JUP_MAX_DEV_BALANCE_PCT = _env_f("JUP_MAX_DEV_BALANCE_PCT",  5.0)   # MỚI (thay devMints)
+JUP_MAX_DEV_MINTS       = _env_f("JUP_MAX_DEV_MINTS",      9999.0)  # cũ: 1 -> tắt
+
 _session = requests.Session()
 _session.headers.update({"Accept": "application/json",
-                         "User-Agent": "sol-meme-bot-free-sources/1.0"})
+                         "User-Agent": "sol-meme-bot-free-sources/2.0"})
 _last_call = {}
 
 
@@ -153,12 +200,17 @@ def jupiter_signals(mint: str) -> Optional[dict]:
         "organic_label": t.get("organicScoreLabel"),
         "holder_count": t.get("holderCount"),
         "top_holders_pct": _f(audit.get("topHoldersPercentage"), -1.0),
+        # MỚI: dev còn ôm bao nhiêu % supply — cờ đỏ THẬT, khác hẳn devMints
+        "dev_balance_pct": (_f(audit.get("devBalancePercentage"), -1.0)
+                            if audit.get("devBalancePercentage") is not None else None),
         "mint_disabled": audit.get("mintAuthorityDisabled"),
         "freeze_disabled": audit.get("freezeAuthorityDisabled"),
         "dev_mints": audit.get("devMints"),
+        "dev_migrations": audit.get("devMigrations"),
         "is_verified": bool(t.get("isVerified")),
         "tags": t.get("tags") or [],
         "cexes": t.get("cexes") or [],
+        "launchpad": t.get("launchpad"),
         "dev_wallet": t.get("dev"),
         "twitter": t.get("twitter"),
         "website": t.get("website"),
@@ -166,7 +218,9 @@ def jupiter_signals(mint: str) -> Optional[dict]:
         "mcap": _f(t.get("mcap")),
     }
 
-    # --- Tỷ lệ volume THẬT: đây là chỉ báo wash-trading tốt nhất có được miễn phí ---
+    # --- Tỷ lệ volume THẬT: chỉ báo wash-trading tốt nhất có được miễn phí ---
+    # LƯU Ý QUAN TRỌNG: giá trị điển hình là 1-15%, KHÔNG PHẢI 40-100%.
+    # Jupiter coi lệnh qua aggregator/router là inorganic. Đừng đặt ngưỡng cao.
     for win in ("stats5m", "stats1h", "stats24h"):
         s = t.get(win) or {}
         buy_v = _f(s.get("buyVolume"))
@@ -174,14 +228,29 @@ def jupiter_signals(mint: str) -> Optional[dict]:
         sell_v = _f(s.get("sellVolume"))
         sell_org = _f(s.get("sellOrganicVolume"))
         key = win.replace("stats", "")
-        # % volume mua là thật (0-100). None nếu chưa có volume để kết luận.
-        out[f"organic_buy_pct_{key}"] = round(buy_org / buy_v * 100, 1) if buy_v > 0 else None
-        # net organic: mua thật vs bán thật
+        out[f"organic_buy_pct_{key}"] = round(buy_org / buy_v * 100, 2) if buy_v > 0 else None
+        out[f"buy_volume_{key}"] = buy_v
         out[f"organic_net_{key}"] = round(buy_org - sell_org, 2) if (buy_org or sell_org) else None
         out[f"organic_buyers_{key}"] = s.get("numOrganicBuyers")
         out[f"traders_{key}"] = s.get("numTraders")
         out[f"holder_change_{key}"] = s.get("holderChange")
+        out[f"price_change_{key}"] = s.get("priceChange")
     return out
+
+
+def jupiter_top_holders_pct(jup: Optional[dict]) -> Optional[float]:
+    """% top holder theo Jupiter — dùng BÙ khi GoPlus trả mảng holders rỗng.
+
+    Đây là lý do CSV cũ ghi top10_holder_pct = 0.0% cho cả 2 tín hiệu:
+    GoPlus không index holder cho token mới -> bot cộng 9 điểm 'phân phối tốt'
+    trong khi thực tế nó KHÔNG BIẾT GÌ. Số 0 giả đó nguy hiểm hơn là None.
+    """
+    if not jup:
+        return None
+    v = jup.get("top_holders_pct")
+    if v is None or v < 0:
+        return None
+    return round(float(v), 2)
 
 
 # --------------------------------------------------------------------------- #
@@ -221,7 +290,7 @@ def _top_holder_owners(mint: str, top_n: int) -> list:
 
 def _wallet_age_hours(owner: str) -> Optional[float]:
     """Tuổi ví Solana. Lấy 1000 chữ ký gần nhất trong 1 call:
-    - nếu trả < 1000 -> đã thấy hết lịch sử, cái cuối là giao dịch đầu tiên (chính xác)
+    - nếu trả < 1000 -> đã thấy hết lịch sử, cái cuối là giao dịch đầu tiên
     - nếu trả = 1000 -> ví hoạt động nhiều, chắc chắn không phải ví mới 24h
     """
     res = _rpc("getSignaturesForAddress", [owner, {"limit": 1000}])
@@ -265,7 +334,6 @@ def fresh_wallet_ratio(mint: str,
             fresh_amount += amount
     if checked < FRESH_WALLET_MIN_CHECKED:
         return None
-    # % trên tổng của nhóm top N (không phải trên toàn supply)
     return round(fresh_amount / total * 100, 2)
 
 
@@ -299,7 +367,8 @@ def social_presence_score(mint: str, symbol: str = "",
     Nó đo token CÓ hạ tầng + được Jupiter/GeckoTerminal đánh giá ra sao,
     không đo chất lượng follower hay % tương tác KOL tích xanh. Bộ lọc thô.
 
-    Truyền sẵn `jup` (kết quả jupiter_signals) để khỏi gọi API 2 lần.
+    LUÔN truyền sẵn `jup` (kết quả jupiter_signals) để khỏi gọi Jupiter 2 lần
+    cho cùng một token — bản cũ gọi lặp, tốn rate limit vô ích.
     """
     if jup is None:
         jup = jupiter_signals(mint)
@@ -310,7 +379,6 @@ def social_presence_score(mint: str, symbol: str = "",
     score = 0.0
     jup = jup or {}
 
-    # organicScore của Jupiter là tín hiệu tốt nhất -> trọng số lớn nhất
     org = jup.get("organic_score", -1.0)
     if org is not None and org >= 0:
         score += min(45.0, org * 0.45)
@@ -333,102 +401,154 @@ def social_presence_score(mint: str, symbol: str = "",
 
 
 # --------------------------------------------------------------------------- #
-#  5) K.O bổ sung dựa trên Jupiter (dùng trong tầng K.O 2)
+#  5) K.O bổ sung dựa trên Jupiter — ĐÃ HIỆU CHỈNH
 # --------------------------------------------------------------------------- #
 
 def jupiter_ko(jup: Optional[dict],
-               min_organic_score: float = 30.0,
-               min_organic_buy_pct: float = 40.0,
-               max_top_holders_pct: float = 25.0,
-               max_dev_mints: int = 1) -> Optional[str]:
+               min_organic_score: float = None,
+               min_organic_buy_pct: float = None,
+               max_top_holders_pct: float = None,
+               max_dev_balance_pct: float = None,
+               max_dev_mints: float = None) -> Optional[str]:
     """K.O dựa trên dữ liệu Jupiter. Trả lý do loại, hoặc None nếu qua.
 
     Không có dữ liệu Jupiter -> trả None (KHÔNG loại), vì token quá mới
     thường chưa được Jupiter index. Đừng để thiếu dữ liệu thành án tử.
+
+    NGUYÊN TẮC SAU BẢN VÁ: chỉ loại khi có BẰNG CHỨNG XẤU RÕ RÀNG.
+    Thiếu dữ liệu / dữ liệu bằng 0 vì chưa index -> bỏ qua, để tầng khác quyết.
     """
     if not jup:
         return None
 
-    # mint/freeze: đối chiếu chéo với GoPlus. False = quyền CHƯA bị thu hồi.
+    min_organic_score   = JUP_MIN_ORGANIC_SCORE   if min_organic_score   is None else min_organic_score
+    min_organic_buy_pct = JUP_MIN_ORGANIC_BUY_PCT if min_organic_buy_pct is None else min_organic_buy_pct
+    max_top_holders_pct = JUP_MAX_TOP_HOLDERS_PCT if max_top_holders_pct is None else max_top_holders_pct
+    max_dev_balance_pct = JUP_MAX_DEV_BALANCE_PCT if max_dev_balance_pct is None else max_dev_balance_pct
+    max_dev_mints       = JUP_MAX_DEV_MINTS       if max_dev_mints       is None else max_dev_mints
+
+    # --- 1. mint/freeze: đối chiếu chéo với GoPlus ---
+    # Chỉ K.O khi Jupiter nói RÕ là False. Field vắng mặt (None) -> không kết luận.
     if jup.get("mint_disabled") is False:
         return "Jupiter: mint authority CHƯA thu hồi"
     if jup.get("freeze_disabled") is False:
         return "Jupiter: freeze authority CHƯA thu hồi"
 
+    # --- 2. Dev còn ôm bao nhiêu % supply (thay cho devMints sai lệch) ---
+    dbp = jup.get("dev_balance_pct")
+    if dbp is not None and dbp >= 0 and dbp > max_dev_balance_pct:
+        return f"dev còn giữ {dbp:.1f}% supply (>{max_dev_balance_pct:.0f}%)"
+
+    # --- 3. devMints: MẶC ĐỊNH TẮT ---
+    # audit.devMints = số token ví dev đã từng phát hành, KHÔNG phải số lần in
+    # thêm supply của token này. TOAD=10, CASH=11 vẫn là token tốt.
+    # Chỉ bật lại nếu anh chủ ý set JUP_MAX_DEV_MINTS.
     dm = jup.get("dev_mints")
     if isinstance(dm, (int, float)) and dm > max_dev_mints:
-        return f"Jupiter: dev đã mint {int(dm)} lần (>{max_dev_mints})"
+        return f"Jupiter: ví dev đã phát hành {int(dm)} token (>{int(max_dev_mints)})"
 
+    # --- 4. organicScore ---
+    # Bỏ qua khi = 0 hoặc âm: token quá mới, Jupiter chưa chấm điểm.
     org = jup.get("organic_score", -1.0)
-    if org is not None and 0 <= org < min_organic_score:
+    if org is not None and org > 0 and org < min_organic_score:
         return f"organicScore {org:.0f} < {min_organic_score:.0f} (Jupiter đánh giá kém)"
 
+    # --- 5. Top holder concentration ---
     thp = jup.get("top_holders_pct", -1.0)
     if thp is not None and thp >= 0 and thp > max_top_holders_pct:
-        return f"top holders {thp:.1f}% > {max_top_holders_pct}% (Jupiter)"
+        return f"top holders {thp:.1f}% > {max_top_holders_pct:.0f}% (Jupiter)"
 
-    # wash trading: % volume mua là THẬT
+    # --- 6. Wash trading ---
+    # THANG ĐO THỰC TẾ của organic_buy_pct là 1-15%, KHÔNG phải 40-100%.
+    # Đo 11/08/2026: SOL 0.77% | USDT 2.9% | USDC 3.7% | CASH 10.2% | TOAD 13.8%.
+    # Token volume càng lớn, tỷ lệ càng THẤP (nhiều lệnh đi qua router).
+    # Vì vậy dùng 2 tín hiệu, cả hai đều chỉ bắt trường hợp wash gần như tuyệt đối:
+    buyv1h = jup.get("buy_volume_1h") or 0
+    if buyv1h >= 10_000:
+        # (a) có volume mua nhưng KHÔNG một người mua thật nào -> bot 100%
+        ob = jup.get("organic_buyers_1h")
+        if isinstance(ob, (int, float)) and ob == 0:
+            return f"0 người mua thật trong 1h dù volume mua ${buyv1h:,.0f} (bot 100%)"
+        # (b) sàn tuyệt đối
+        pct1h = jup.get("organic_buy_pct_1h")
+        if pct1h is not None and pct1h < min_organic_buy_pct:
+            return (f"chỉ {pct1h:.1f}% volume mua 1h là thật "
+                    f"(<{min_organic_buy_pct:.1f}% -> wash trading)")
+    return None
+
+
+# --------------------------------------------------------------------------- #
+#  6) MỚI — Jupiter CỘNG ĐIỂM (bản cũ chỉ dùng Jupiter để loại, không để thưởng)
+# --------------------------------------------------------------------------- #
+
+def jupiter_score_bonus(jup: Optional[dict]) -> tuple:
+    """Trả (điểm_cộng, [lý_do]). Tối đa +15 để không phá cân bằng thang 100.
+
+    Cố tình chồng lấn ÍT với social_presence_score (vốn cũng dùng organicScore),
+    nên trọng số ở đây đặt nhẹ.
+    """
+    if not jup:
+        return 0.0, []
+
+    pts, why = 0.0, []
+
+    org = jup.get("organic_score", -1.0)
+    if org is not None and org >= 70:
+        pts += 8; why.append(f"organicScore {org:.0f} (cao)")
+    elif org is not None and org >= 40:
+        pts += 5; why.append(f"organicScore {org:.0f}")
+    elif org is not None and org >= 20:
+        pts += 2
+
     pct1h = jup.get("organic_buy_pct_1h")
-    if pct1h is not None and pct1h < min_organic_buy_pct:
-        return f"chỉ {pct1h:.0f}% volume mua 1h là thật (<{min_organic_buy_pct:.0f}% -> wash trading)"
-    return None
+    if pct1h is not None:
+        if pct1h >= 15:
+            pts += 4; why.append(f"volume mua thật 1h {pct1h:.0f}%")
+        elif pct1h >= 8:
+            pts += 2
+
+    hc = jup.get("holder_change_1h")
+    if isinstance(hc, (int, float)) and hc > 0:
+        pts += 2; why.append(f"holder tăng 1h +{hc:.1f}%")
+
+    if jup.get("is_verified"):
+        pts += 1; why.append("Jupiter verified")
+
+    return round(min(15.0, pts), 1), why
 
 
 # --------------------------------------------------------------------------- #
-#  HƯỚNG DẪN CẮM VÀO sol_meme_bot.py
+#  7) Tự kiểm tra nhanh:  python free_sources_sol.py <mint>
 # --------------------------------------------------------------------------- #
-"""
-BƯỚC 1 — Upload file này vào repo sol-meme-scanner, cùng cấp sol_meme_bot.py
 
-BƯỚC 2 — Trong sol_meme_bot.py, THAY 3 hàm hook cũ (từ "def hook_fresh_wallet_ratio"
-         đến hết "def hook_social_score") bằng:
-
-# --- nguồn miễn phí (module free_sources_sol.py) ---
-try:
-    import free_sources_sol as fsol
-except ImportError:
-    fsol = None
-
-def hook_fresh_wallet_ratio(mint: str, cfg: Config) -> Optional[float]:
-    if fsol is None:
-        return None
-    return fsol.fresh_wallet_ratio(mint)
-
-def hook_smart_money(mint: str, cfg: Config) -> Optional[dict]:
-    # Không có nguồn miễn phí. Rẻ nhất Cielo Whale $199/thang.
-    if not cfg.smart_money_api_key:
-        return None
-    return None
-
-def hook_social_score(mint: str, symbol: str, cfg: Config) -> Optional[float]:
-    if fsol is None:
-        return None
-    return fsol.social_presence_score(mint, symbol)
+def _selftest(mint: str):
+    print(f"=== Jupiter signals cho {mint} ===")
+    jup = jupiter_signals(mint)
+    if not jup:
+        print("  KHÔNG có dữ liệu Jupiter (token quá mới hoặc lite-api bị chặn).")
+        print("  -> jupiter_ko() sẽ trả None, KHÔNG loại token. Đúng thiết kế.")
+        return
+    for k in ("organic_score", "organic_label", "top_holders_pct", "dev_balance_pct",
+              "dev_mints", "mint_disabled", "freeze_disabled", "holder_count",
+              "organic_buy_pct_5m", "organic_buy_pct_1h", "organic_buy_pct_24h",
+              "buy_volume_1h", "holder_change_1h", "is_verified", "launchpad"):
+        print(f"  {k:22} = {jup.get(k)}")
+    ko = jupiter_ko(jup)
+    print(f"\n  --> jupiter_ko: {ko if ko else 'QUA ✅'}")
+    bonus, why = jupiter_score_bonus(jup)
+    print(f"  --> điểm cộng : +{bonus}  {why}")
 
 
-BƯỚC 3 (QUAN TRỌNG NHẤT) — thêm K.O Jupiter vào tầng 2.
-         Trong hàm ko_stage2_goplus_sol, ngay TRƯỚC dòng "return None" cuối cùng,
-         chèn:
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        _selftest(sys.argv[1])
+    else:
+        print("Dùng: python free_sources_sol.py <mint_address>")
+        print("Ví dụ (token thật, organicScore cao):")
+        print("  python free_sources_sol.py A13oRB9FFaiUjfi6LdCg6p9ka1u8SfGkUFs4SKvPpump")
 
-    # --- K.O bổ sung từ Jupiter (organic score, wash trading, top holders) ---
-    if fsol is not None:
-        jup = fsol.jupiter_signals(c.token_address)
-        if jup:
-            c.jupiter = jup                      # lưu lại để chấm điểm/hiển thị
-            ko_jup = fsol.jupiter_ko(jup)
-            if ko_jup:
-                return ko_jup
 
-         Và thêm 1 dòng vào dataclass Candidate (ngay trên "score: float = 0.0"):
-
-    jupiter: Optional[dict] = None
-
-BƯỚC 4 — Lấy key Helius MIỄN PHÍ tại https://helius.dev (1M credit/tháng),
-         thêm vào GitHub Secrets tên HELIUS_API_KEY. Workflow scanner-sol.yml
-         đã có sẵn dòng env HELIUS_API_KEY nên không cần sửa gì thêm.
-         (Không có key thì fresh-wallet trả None, mọi thứ khác vẫn chạy.)
-
-BƯỚC 5 — Nếu lite-api.jup.ag bị chặn (log hiện "[jupiter] lite-api bị chặn"),
-         lấy key tại portal.jup.ag, thêm Secret JUPITER_API_KEY và thêm dòng
-         JUPITER_API_KEY: ${{ secrets.JUPITER_API_KEY }} vào env: của workflow.
-"""
+# --------------------------------------------------------------------------- #
+#  HƯỚNG DẪN VÁ sol_meme_bot.py — xem file HUONG_DAN_VA.md
+# --------------------------------------------------------------------------- #
