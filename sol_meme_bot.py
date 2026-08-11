@@ -4,6 +4,24 @@
 sol_meme_bot.py — Bot lọc memecoin trên SOLANA theo bộ tiêu chí K.O + dòng tiền định lượng.
 Bản song sinh của base_meme_bot.py, nhưng tầng an toàn được VIẾT LẠI cho Solana.
 
+=============================================================================
+ BẢN VÁ v2 (11/08/2026) — 5 THAY ĐỔI, tất cả đều đánh dấu [VÁ v2]
+=============================================================================
+ [1] ko_stage2_goplus_sol mục 4: GoPlus trả mảng holders RỖNG -> trước đây gán
+     top10_holder_pct = 0.0 (số 0 GIẢ), khiến score_candidate cộng khống 9 điểm
+     "phân phối tốt" cho token bot không biết gì. Xem sol_signals.csv: cả 2 tín
+     hiệu cũ đều ghi top10 = 0.0. Bộ lọc insider thực tế KHÔNG hoạt động.
+     -> Nay gán None khi không có dữ liệu.
+ [2] ko_stage2_goplus_sol mục 7: bù top-holder bằng Jupiter khi GoPlus thiếu.
+ [3] score_candidate: thêm mục 9b — dữ liệu Jupiter giờ CỘNG ĐIỂM (tối đa +15),
+     bản cũ chỉ dùng Jupiter để loại, không bao giờ để thưởng.
+ [4] hook_social_score: nhận sẵn `jup` -> bỏ việc gọi Jupiter 2 lần/token.
+ [5] run_once: log chẩn đoán — thống kê lý do K.O tầng 2 + danh sách "gần đạt".
+     Từ giờ log Actions cho biết ứng viên chết ở đâu, thay vì chỉ thấy im lặng.
+
+ Ngưỡng K.O của Jupiter nằm ở free_sources_sol.py (đã hiệu chỉnh riêng).
+=============================================================================
+
 BACKBONE dữ liệu (miễn phí):
   - GeckoTerminal        : new/trending pools + core metrics + buyers/sellers (maker ratio) + trades
   - GoPlus Solana (beta) : mintable, freezable, closable, transfer_fee, LP holders, top holders
@@ -33,6 +51,7 @@ Chạy:
 """
 
 import argparse, csv, json, os, time
+from collections import Counter                      # [VÁ v2] cho log chẩn đoán
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Optional
@@ -63,6 +82,9 @@ class Config:
     max_transfer_fee_pct: float = 3.0
 
     # Slippage: lệnh $1000 gây trượt > 3% -> loại (ước tính AMM)
+    # LƯU Ý: công thức estimate_slippage_pct + ngưỡng 3% ép thanh khoản tối thiểu
+    # THỰC TẾ lên ~$64.7k, cao hơn min_liquidity_usd bên dưới. Muốn nới thì tăng
+    # max_slippage_pct (4% -> ~$48k, 5% -> ~$38k).
     slippage_trade_size_usd: float = 1_000
     max_slippage_pct: float = 3.0
 
@@ -232,7 +254,7 @@ class HttpClient:
         self.cfg = cfg
         self.s = requests.Session()
         self.s.headers.update({"Accept": "application/json",
-                               "User-Agent": "sol-meme-bot/1.0 (+research)"})
+                               "User-Agent": "sol-meme-bot/2.0 (+research)"})
         self._last_call = {}
 
     def _throttle(self, host: str, min_interval: float):
@@ -545,21 +567,26 @@ def ko_stage2_goplus_sol(c: Candidate, cfg: Config, gp: GoPlusSolana) -> Optiona
         return "creator nằm trong danh sách địa chỉ độc hại"
 
     # --- 4. Top-10 holder concentration (GoPlus Solana KHÔNG có top 20) ---
+    # [VÁ v2] GoPlus trả mảng holders RỖNG cho token mới. Bản cũ gán 0.0 -> số 0
+    # GIẢ -> score_candidate cộng khống 9 điểm "phân phối tốt". Nay gán None.
     holders = sec.get("holders") or []
-    conc = 0.0
-    for h in holders[:10]:
-        if not isinstance(h, dict):
-            continue
-        if str(h.get("is_locked", "0")) == "1":
-            continue
-        tag = (h.get("tag") or "").lower()
-        acct = (h.get("token_account") or "")
-        if any(b in tag for b in BURN_TAGS) or acct == SOL_INCINERATOR:
-            continue
-        conc += _pct(h.get("percent"))
-    c.top10_holder_pct = round(conc, 2)
-    if c.top10_holder_pct > cfg.max_top10_holder_pct:
-        return f"top10 holders {c.top10_holder_pct:.1f}% > {cfg.max_top10_holder_pct}% (insider/cluster)"
+    if not holders:
+        c.top10_holder_pct = None          # None = "không biết", KHÁC với 0%
+    else:
+        conc = 0.0
+        for h in holders[:10]:
+            if not isinstance(h, dict):
+                continue
+            if str(h.get("is_locked", "0")) == "1":
+                continue
+            tag = (h.get("tag") or "").lower()
+            acct = (h.get("token_account") or "")
+            if any(b in tag for b in BURN_TAGS) or acct == SOL_INCINERATOR:
+                continue
+            conc += _pct(h.get("percent"))
+        c.top10_holder_pct = round(conc, 2)
+        if c.top10_holder_pct > cfg.max_top10_holder_pct:
+            return f"top10 holders {c.top10_holder_pct:.1f}% > {cfg.max_top10_holder_pct}% (insider/cluster)"
 
     # --- 5. LP đã đốt/khóa chưa (đặc thù Solana) ---
     dexes = sec.get("dex") or []
@@ -598,6 +625,9 @@ def ko_stage2_goplus_sol(c: Candidate, cfg: Config, gp: GoPlusSolana) -> Optiona
         jup = fsol.jupiter_signals(c.token_address)
         if jup:
             c.jupiter = jup
+            # [VÁ v2] bù top-holder bằng Jupiter khi GoPlus không có dữ liệu
+            if c.top10_holder_pct is None:
+                c.top10_holder_pct = fsol.jupiter_top_holders_pct(jup)
             ko_jup = fsol.jupiter_ko(jup)
             if ko_jup:
                 return ko_jup
@@ -643,6 +673,8 @@ def compute_net_buy_volume(c: Candidate, cfg: Config, gt: GeckoTerminal):
 
     def ratio(k):
         b, s = agg[k]["buy"], agg[k]["sell"]
+        # LƯU Ý: khi s == 0 hàm này trả VOLUME USD THÔ chứ không phải tỷ lệ.
+        # Giữ nguyên hành vi bản gốc để không đổi ngữ nghĩa điểm số.
         return (b / s) if s > 0 else (b if b else None)
 
     c.buy_sell_vol_ratio_5m = ratio("5m")
@@ -666,10 +698,11 @@ def hook_smart_money(mint: str, cfg: Config) -> Optional[dict]:
         return None
     return None
 
-def hook_social_score(mint: str, symbol: str, cfg: Config) -> Optional[float]:
+def hook_social_score(mint: str, symbol: str, cfg: Config, jup=None) -> Optional[float]:
+    # [VÁ v2] nhận sẵn `jup` -> không gọi Jupiter lần 2 cho cùng token
     if fsol is None:
         return None
-    return fsol.social_presence_score(mint, symbol)
+    return fsol.social_presence_score(mint, symbol, jup)
 
 
 # =========================================================================== #
@@ -741,6 +774,14 @@ def score_candidate(c: Candidate, cfg: Config):
             score -= 25; reasons.append(f"RugCheck RỦI RO ({c.rugcheck_score:.0f})")
         if c.rugcheck_risks:
             reasons.append("risks: " + ", ".join(c.rugcheck_risks[:3]))
+
+    # 9b) [VÁ v2] Jupiter bonus (tối đa +15)
+    # Bản cũ dùng dữ liệu Jupiter CHỈ để loại, không bao giờ để thưởng.
+    if fsol is not None and c.jupiter:
+        jb, jw = fsol.jupiter_score_bonus(c.jupiter)
+        if jb:
+            score += jb
+            reasons.extend(jw)
 
     # 10) HOOKS nếu có (smart money +15 / social +10)
     if c.smart_money_signal:
@@ -816,32 +857,49 @@ class Scanner:
         cands = self.discover()
         print(f"  Khám phá: {len(cands)} pool")
 
-        survivors = []
+        # [VÁ v2] thống kê lý do K.O tầng 1
+        survivors, ko1 = [], Counter()
         for c in cands:
-            if ko_stage1(c, self.cfg):
+            r = ko_stage1(c, self.cfg)
+            if r:
+                ko1[r.split("$")[0].split("{")[0].strip()[:40]] += 1
                 continue
             survivors.append(c)
         print(f"  Qua K.O tầng 1 (LP/MC, slippage, wash...): {len(survivors)}")
+        for r, n in ko1.most_common(6):
+            print(f"      × {n:3d}  loại vì: {r}")
 
-        safe = []
+        # [VÁ v2] thống kê lý do K.O tầng 2 — chỗ này chính là nơi bot chết im lặng
+        safe, ko2 = [], Counter()
         for c in survivors:
             ko = ko_stage2_goplus_sol(c, self.cfg, self.gp)
             if ko:
                 c.ko_reason = ko
+                ko2[ko.split("(")[0].strip()[:50]] += 1
                 continue
             safe.append(c)
         print(f"  Qua K.O tầng 2 (mint/freeze/fee/LP/holders): {len(safe)}")
+        for r, n in ko2.most_common(8):
+            print(f"      × {n:3d}  loại vì: {r}")
 
         hits = []
         for c in safe:
             compute_net_buy_volume(c, self.cfg, self.gt)
             enrich_rugcheck(c, self.cfg, self.rug)
             c.smart_money_signal = hook_smart_money(c.token_address, self.cfg)
-            c.social_score = hook_social_score(c.token_address, c.symbol, self.cfg)
+            # [VÁ v2] truyền c.jupiter -> khỏi gọi Jupiter lần 2
+            c.social_score = hook_social_score(c.token_address, c.symbol, self.cfg, c.jupiter)
             score_candidate(c, self.cfg)
             if c.score >= self.cfg.min_score_to_alert:
                 hits.append(c)
         hits.sort(key=lambda x: x.score, reverse=True)
+
+        # [VÁ v2] ai "gần đạt" — để biết nên hạ ngưỡng hay không
+        near = sorted([c for c in safe if c.score < self.cfg.min_score_to_alert],
+                      key=lambda x: x.score, reverse=True)[:5]
+        for c in near:
+            print(f"      gần đạt: {c.symbol} {c.score}/{self.cfg.min_score_to_alert} "
+                  f"— {'; '.join(c.reasons[:3])}")
 
         fresh = [c for c in hits if c.token_address not in self.seen]
         cap = self.cfg.max_alerts_per_run
@@ -890,12 +948,17 @@ class Scanner:
 
     def _csv(self, c: Candidate):
         path = self.cfg.output_csv
-        new = not os.path.exists(path)
         row = asdict(c)
         row["reasons"] = " | ".join(c.reasons)
         row["rugcheck_risks"] = " | ".join(c.rugcheck_risks)
         row["smart_money_signal"] = json.dumps(c.smart_money_signal) if c.smart_money_signal else ""
+        # [VÁ v2] KHÔNG ghi cột 'jupiter' (là dict, và sol_signals.csv cũ không có
+        # cột này -> thêm vào sẽ làm mọi dòng mới lệch cột so với header cũ).
+        # Thông tin Jupiter đã nằm trong cột 'reasons' qua jupiter_score_bonus().
+        row.pop("jupiter", None)
         row["scanned_at"] = datetime.now(timezone.utc).isoformat()
+
+        new = not os.path.exists(path)
         with open(path, "a", newline="", encoding="utf-8") as fp:
             w = csv.DictWriter(fp, fieldnames=list(row.keys()))
             if new:
